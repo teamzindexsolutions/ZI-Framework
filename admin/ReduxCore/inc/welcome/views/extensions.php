@@ -95,8 +95,10 @@
             $data = get_transient( 'redux-extensions-fetch' );
 
             if ( empty( $data ) ) {
-                $data = json_decode( wp_remote_retrieve_body( wp_remote_get( 'http://reduxframework.com/wp-admin/admin-ajax.php?action=get_redux_extensions' ) ), true );
+                $data = @wp_remote_retrieve_body( @wp_remote_get( 'http://reduxframework.com/wp-admin/admin-ajax.php?action=get_redux_extensions' ) );
+                
                 if ( ! empty( $data ) ) {
+                    $data = json_decode( $data, true );
                     set_transient( 'redux-extensions-fetch', $data, 24 * HOUR_IN_SECONDS );
                 }
             }
@@ -117,30 +119,32 @@
 
             $data = rdx_shuffle_assoc( $data );
 
-            foreach ( $data as $key => $extension ) {
+            if (!empty($data)) {
+                foreach ( $data as $key => $extension ) {
 ?>
-                <div class="theme color<?php echo esc_html($color);?>">
-                    <?php $color ++;?>
-                    <div class="theme-screenshot">
-                        <figure>
-                            <i class="el <?php echo isset( $iconMap[ $key ] ) && ! empty( $iconMap[ $key ] ) ? 'el-' . esc_attr($iconMap[ $key ]) : 'el-redux'; ?>"></i>
-                            <figcaption>
-                                <p><?php echo esc_html($extension['excerpt']);?></p>
-                                <a href="<?php echo esc_url($extension['url']); ?>" target="_blank">Learn more</a>
-                            </figcaption>
-                        </figure>
-                    </div>
-                    <h3 class="theme-name" id="classic"><?php echo esc_html($extension['title']); ?></h3>
+                    <div class="theme color<?php echo esc_html($color);?>">
+                        <?php $color ++;?>
+                        <div class="theme-screenshot">
+                            <figure>
+                                <i class="el <?php echo isset( $iconMap[ $key ] ) && ! empty( $iconMap[ $key ] ) ? 'el-' . esc_attr($iconMap[ $key ]) : 'el-redux'; ?>"></i>
+                                <figcaption>
+                                    <p><?php echo esc_html($extension['excerpt']);?></p>
+                                    <a href="<?php echo esc_url($extension['url']); ?>" target="_blank">Learn more</a>
+                                </figcaption>
+                            </figure>
+                        </div>
+                        <h3 class="theme-name" id="classic"><?php echo esc_html($extension['title']); ?></h3>
 
-                    <div class="theme-actions">
-                        <a class="button button-primary button-install-demo"
-                           data-demo-id="<?php echo esc_attr($key); ?>"
-                           href="<?php echo esc_url($extension['url']); ?>" 
-                           target="_blank">Learn More
-                        </a>
+                        <div class="theme-actions">
+                            <a class="button button-primary button-install-demo"
+                               data-demo-id="<?php echo esc_attr($key); ?>"
+                               href="<?php echo esc_url($extension['url']); ?>" 
+                               target="_blank">Learn More
+                            </a>
+                        </div>
                     </div>
-                </div>
 <?php
+                }
             }
 ?>
         </div>

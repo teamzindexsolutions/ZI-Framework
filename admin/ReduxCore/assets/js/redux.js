@@ -62,9 +62,11 @@
         if ( redux.fields.hasOwnProperty( "editor" ) ) {
             $.each(
                 redux.fields.editor, function( $key, $index ) {
-                    var editor = tinyMCE.get( $key );
-                    if ( editor ) {
-                        editor.save();
+                    if ( typeof(tinyMCE) !== 'undefined' ) {
+                        var editor = tinyMCE.get( $key );
+                        if ( editor ) {
+                            editor.save();
+                        }
                     }
                 }
             );
@@ -102,7 +104,7 @@
                 error: function( response ) {
                     if ( !window.console ) console = {};
                     console.log = console.log || function( name, data ) {
-                    };
+                        };
                     console.log( redux.ajax.console );
                     console.log( response.responseText );
                     jQuery( '.redux-action_bar input' ).removeAttr( 'disabled' );
@@ -186,6 +188,8 @@
                 if ( redux.args.ajax_save === true ) {
                     $.redux.ajax_save( $( this ) );
                     e.preventDefault();
+                } else {
+                    location.reload( true );
                 }
             }
         );
@@ -309,7 +313,7 @@
             }
         );
 
-        $( 'td > fieldset:empty,td > div:empty' ).parent().parent().hide();
+        $( '.redux-container td > fieldset:empty,td > div:empty' ).parent().parent().hide();
     };
 
     $.redux.initQtip = function() {
@@ -610,6 +614,11 @@
             }
         );
 
+        if ( redux.last_tab !== undefined ) {
+            $( '#' + redux.last_tab + '_section_group_li_a' ).click();
+            return;
+        }
+
         var tab = decodeURI( (new RegExp( 'tab' + '=' + '(.+?)(&|$)' ).exec( location.search ) || [, ''])[1] );
 
         if ( tab !== "" ) {
@@ -653,7 +662,7 @@
                 if ( typeof redux.field_objects != 'undefined' && redux.field_objects[type] && redux.field_objects[type] ) {
                     redux.field_objects[type].init();
                 }
-                if ( !redux.customizer && $( this ).hasClass( 'redux_remove_th' )  ) {
+                if ( !redux.customizer && $( this ).hasClass( 'redux_remove_th' ) ) {
 
                     var tr = $( this ).parents( 'tr:first' );
                     var th = tr.find( 'th:first' );
@@ -841,15 +850,21 @@
         if ( redux.required === null ) {
             return;
         }
+
         var current = $( variable ),
             id = current.parents( '.redux-field:first' ).data( 'id' );
+
         if ( !redux.required.hasOwnProperty( id ) ) {
             return;
         }
 
         var container = current.parents( '.redux-field-container:first' ),
-            is_hidden = container.parents( 'tr:first' ).hasClass( '.hide' ),
-            hadSections = false;
+            is_hidden = container.parents( 'tr:first' ).hasClass( 'hide' );
+
+        if ( !container.parents( 'tr:first' ).length ) {
+            is_hidden = container.parents( '.customize-control:first' ).hasClass( 'hide' );
+        }
+
         $.each(
             redux.required[id], function( child, dependents ) {
 
@@ -960,7 +975,7 @@
         if ( redux.required_child.hasOwnProperty( id ) ) {
             $.each(
                 redux.required_child[id], function( i, parentData ) {
-                    if ( $( '#' + redux.args.opt_name + '-' + parentData.parent ).parents( 'tr:first' ).hasClass( '.hide' ) ) {
+                    if ( $( '#' + redux.args.opt_name + '-' + parentData.parent ).parents( 'tr:first' ).hasClass( 'hide' ) ) {
                         show = false;
                     } else {
                         if ( show !== false ) {
@@ -983,14 +998,17 @@
             operation = data.operation,
             arr;
 
+        if ($.isPlainObject( parentValue )) {
+            parentValue = Object.keys( parentValue ).map(
+                function( key ) {
+                    return [key, parentValue[key]];
+                }
+            );            
+        }
+
         switch ( operation ) {
             case '=':
             case 'equals':
-//                if ($.isPlainObject(parentValue)) {
-//                    var arr = Object.keys(parentValue).map(function (key) {return parentValue[key]});
-//                    parentValue = arr;
-//                }
-
                 if ( $.isArray( parentValue ) ) {
                     $( parentValue[0] ).each(
                         function( idx, val ) {
@@ -1031,7 +1049,7 @@
             case '!=':
             case 'not':
                 if ( $.isArray( parentValue ) ) {
-                    $( parentValue ).each(
+                    $( parentValue[0] ).each(
                         function( idx, val ) {
                             if ( $.isArray( checkValue ) ) {
                                 $( checkValue ).each(
@@ -1065,21 +1083,6 @@
                         }
                     }
                 }
-
-                //                //if value was array
-                //                if ( $.isArray( checkValue ) ) {
-                //                    if ( $.inArray( parentValue, checkValue ) == -1 ) {
-                //                        show = true;
-                //                    }
-                //                } else {
-                //                    if ( parentValue != checkValue ) {
-                //                        show = true;
-                //                    } else if ( $.isArray( parentValue ) ) {
-                //                        if ( $.inArray( checkValue, parentValue ) == -1 ) {
-                //                            show = true;
-                //                        }
-                //                    }
-                //                }
                 break;
 
             case '>':
@@ -1115,26 +1118,47 @@
                 break;
 
             case 'contains':
-                if ($.isPlainObject(parentValue)) {
-                    arr = Object.keys(parentValue).map(function (key) {
-                        return parentValue[key];
-                    });
-                    parentValue = arr;
+                if ( $.isPlainObject( parentValue ) ) {
+                    parentValue = Object.keys( parentValue ).map(
+                        function( key ) {
+                            return [key, parentValue[key]];
+                        }
+                    );
                 }
 
-                if ($.isPlainObject(checkValue)) {
-                    arr = Object.keys(checkValue).map(function (key) {
-                        return checkValue[key];
-                    });
-                    checkValue = arr;
+                if ( $.isPlainObject( checkValue ) ) {
+                    checkValue = Object.keys( checkValue ).map(
+                        function( key ) {
+                            return [key, checkValue[key]];
+                        }
+                    );
                 }
 
                 if ( $.isArray( checkValue ) ) {
                     $( checkValue ).each(
                         function( idx, val ) {
-                            //console.log (val);
-                            if ( parentValue.toString().indexOf( val ) !== -1 ) {
-                                show = true;
+                            var breakMe = false;
+                            var toFind = val[0];
+                            var findVal = val[1];
+
+                            $( parentValue ).each(
+                                function( i, v ) {
+                                    var toMatch = v[0];
+                                    var matchVal = v[1];
+
+                                    if ( toFind === toMatch ) {
+                                        if ( findVal == matchVal ) {
+                                            show = true;
+                                            breakMe = true;
+
+                                            return false;
+                                        }
+                                    }
+                                }
+                            );
+
+                            if ( breakMe === true ) {
+                                return false;
                             }
                         }
                     );
@@ -1147,17 +1171,21 @@
 
             case 'doesnt_contain':
             case 'not_contain':
-                if ($.isPlainObject(parentValue)) {
-                    arr = Object.keys(parentValue).map(function (key) {
-                        return parentValue[key];
-                    });
+                if ( $.isPlainObject( parentValue ) ) {
+                    arr = Object.keys( parentValue ).map(
+                        function( key ) {
+                            return parentValue[key];
+                        }
+                    );
                     parentValue = arr;
                 }
 
-                if ($.isPlainObject(checkValue)) {
-                    arr = Object.keys(checkValue).map(function (key) {
-                        return checkValue[key];
-                    });
+                if ( $.isPlainObject( checkValue ) ) {
+                    arr = Object.keys( checkValue ).map(
+                        function( key ) {
+                            return checkValue[key];
+                        }
+                    );
                     checkValue = arr;
                 }
 
@@ -1427,58 +1455,41 @@
     $( document ).ready(
         function() {
             if ( redux.rAds ) {
-                setTimeout(
+                var el;
+                if ( $( '#redux-header' ).length > 0 ) {
+                    $( '#redux-header' ).append( '<div class="rAds"></div>' );
+                    el = $( '#redux-header' );
+                } else {
+                    $( '#customize-theme-controls ul' ).first().prepend(
+                        '<li id="redux_rAds" class="accordion-section rAdsContainer" style="position: relative;"><div class="rAds"></div></li>' );
+                    el = $( '#redux_rAds' );
+                }
+
+                el.css( 'position', 'relative' );
+                el.find( '.rAds' ).attr(
+                    'style',
+                    'position:absolute; top: 6px; right: 9px; display:block !important;overflow:hidden;'
+                ).css( 'left', '-99999px' );
+                el.find( '.rAds' ).html( redux.rAds.replace( /<br\s?\/?>/, '' ) );
+                var rAds = el.find( '.rAds' );
+
+                $( rAds ).hide();
+                rAds.bind( "DOMSubtreeModified", function() {
+                    if ( $( this ).html().indexOf( "<a href" ) >= 0 ) {
+                        rAds.find( 'img' ).css( 'visibility', 'hidden' );
+                        setTimeout( function() {
+                            rAds.show();
+                            $.redux.resizeAds();
+                        }, 400 );
+                        rAds.find( 'img' ).css( 'visibility', 'inherit' );
+                        rAds.unbind( "DOMSubtreeModified" );
+                    }
+
+                } );
+                $( window ).resize(
                     function() {
-                        var el;
-                        if ( $( '#redux-header' ).length > 0 ) {
-                            $( '#redux-header' ).append( '<div class="rAds"></div>' );
-                            el = $( '#redux-header' );
-                        } else {
-                            $('#customize-theme-controls ul').first().prepend('<li id="redux_rAds" class="accordion-section rAdsContainer" style="position: relative;"><div class="rAds"></div></li>');
-                            el = $( '#redux_rAds' );
-                        }
-
-                        el.css( 'position', 'relative' );
-
-                        el.find( '.rAds' ).attr(
-                            'style',
-                            'position:absolute; top: 6px; right: 6px; display:block !important;overflow:hidden;'
-                        ).css( 'left', '-99999px' );
-                        el.find( '.rAds' ).html( redux.rAds.replace( /<br\s?\/?>/, '' ) );
-                        var rAds = el.find( '.rAds' );
-
-                        var maxHeight = el.height();
-                        var maxWidth = el.width() - el.find( '.display_header' ).width() - 30;
-
-                        rAds.find( 'a' ).css( 'float', 'right' ).css( 'line-height', el.height() + 'px' ).css(
-                            'margin-left', '5px'
-                        );
-
-                        $( document ).ajaxComplete(
-                            function() {
-                                rAds.find( 'a' ).hide();
-                                setTimeout(
-                                    function() {
-                                        $.redux.resizeAds();
-                                        rAds.find( 'a' ).fadeIn();
-                                    }, 1400
-                                );
-                                setTimeout(
-                                    function() {
-                                        $.redux.resizeAds();
-
-                                    }, 1500
-                                );
-                                $( document ).unbind( 'ajaxComplete' );
-                            }
-                        );
-
-                        $( window ).resize(
-                            function() {
-                                $.redux.resizeAds();
-                            }
-                        );
-                    }, 400
+                        $.redux.resizeAds();
+                    }
                 );
 
             }
@@ -1507,6 +1518,7 @@ var confirmOnPageExit = function( e ) {
 };
 
 function redux_change( variable ) {
+    variable = jQuery(variable);
 
     jQuery( 'body' ).trigger( 'check_dependencies', variable );
 
@@ -1514,8 +1526,15 @@ function redux_change( variable ) {
         jQuery( '#redux-compiler-hook' ).val( 1 );
     }
 
+//    var test = jQuery( variable ).parents( '.redux-field-container:first' );
+//    if ( test.hasClass( 'redux-container-typography' ) && redux.field_objects.typography ) {
+//        redux.field_objects.typography.change( test );
+//    }
+
     var rContainer = jQuery( variable ).parents( '.redux-container:first' );
+
     var parentID = jQuery( variable ).closest( '.redux-group-tab' ).attr( 'id' );
+
     // Let's count down the errors now. Fancy.  ;)
     var id = parentID.split( '_' );
     id = id[0];
@@ -1590,12 +1609,6 @@ function redux_change( variable ) {
     }
     // Don't show the changed value notice while save_notice is visible.
     if ( rContainer.find( '.saved_notice:visible' ).length > 0 ) {
-        return;
-    }
-
-
-    if ( redux.customizer ) {
-        redux.customizer.save( variable, rContainer, parentID );
         return;
     }
 
@@ -1770,3 +1783,19 @@ function colorNameToHex( colour ) {
     return colour;
 }
 
+function redux_hook( object, functionName, callback, before ) {
+    (function( originalFunction ) {
+        object[functionName] = function() {
+
+            if ( before === true ) {
+                callback.apply( this, [returnValue, originalFunction, arguments] );
+            }
+            var returnValue = originalFunction.apply( this, arguments );
+            if ( before !== true ) {
+                callback.apply( this, [returnValue, originalFunction, arguments] );
+            }
+
+            return returnValue;
+        };
+    }( object[functionName] ));
+}

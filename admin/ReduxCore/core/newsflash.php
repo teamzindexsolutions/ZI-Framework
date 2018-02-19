@@ -28,28 +28,35 @@
 
                 $this->notice_data = get_option( 'r_notice_data', '' );
 
+                $fname = Redux_Functions::bub( 'get_notice_json', $parent->args['opt_name'] );
+                $mname = Redux_Functions::yo( 'display_message', $parent->args['opt_name'] );
+
                 // if notice data is empty
                 if ( empty( $this->notice_data ) ) {
                     // get notice data from server and create cache data
-                    $this->get_notice_json();
+                    $this->$fname();
                 } else {
                     // check expiry time
                     if ( ! isset( $_COOKIE[ $this->cookie_id ] ) ) {
                         // expired!  get notice data from server
-                        $this->get_notice_json();
+                        $this->$fname();
                     }
                 }
 
                 // set the admin notice msg
-                $this->display_message();
+                $this->$mname();
             }
 
+            private function bub() {
+                $this->notice_data = '';
+            }
+            
             private function get_notice_json() {
 
                 // get notice data from server
-
-                $data = wp_remote_get( $this->server_file, array( 'sslverify' => false ) );
-                if ( ! is_wp_error( $data ) && $data['response']['code'] == 200 ) {
+                $data = @wp_remote_get( $this->server_file, array( 'sslverify' => false ) );
+                
+                if ( isset( $data ) && ! empty( $data ) && ! is_wp_error( $data ) && $data['response']['code'] == 200 ) {
                     $data = $data['body'];
                     // if some data exists
                     if ( $data != '' || ! empty( $data ) ) {
@@ -102,14 +109,16 @@
                         // get unique meta key
                         $key = get_option( $this->cookie_id );
 
-                        // set admin notice array
-                        $this->parent->admin_notices[] = array(
-                            'type'    => $data['type'],
-                            'msg'     => $data['title'] . $data['message'],
-                            'id'      => $this->cookie_id . '_' . $key,
-                            'dismiss' => true,
-                            'color'   => $data['color']
+                        $notice_data = array(
+                            'parent'    => $this->parent,
+                            'type'      => $data['type'],
+                            'msg'       => $data['title'] . $data['message'],
+                            'id'        => $this->cookie_id . '_' .  $key,
+                            'dismiss'   => true,
+                            'color'     => $data['color']
                         );
+
+                        Redux_Admin_Notices::set_notice($notice_data);
                     }
                 }
             }

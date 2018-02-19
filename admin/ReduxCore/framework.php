@@ -15,19 +15,9 @@
      * @subpackage  Core
      * @author      Redux Framework Team
      */
-// Exit if accessed directly
+    // Exit if accessed directly
     if ( ! defined( 'ABSPATH' ) ) {
         exit;
-    }
-
-// Fix for the GT3 page builder: http://www.gt3themes.com/wordpress-gt3-page-builder-plugin/
-    /** @global string $pagenow */
-    if ( has_action( 'ecpt_field_options_' ) ) {
-        global $pagenow;
-        if ( $pagenow === 'admin.php' ) {
-
-            remove_action( 'admin_init', 'pb_admin_init' );
-        }
     }
 
     if ( ! class_exists( 'ReduxFrameworkInstances' ) ) {
@@ -40,7 +30,7 @@
         add_action( 'redux/init', 'ReduxFrameworkInstances::get_instance' );
     }
 
-// Don't duplicate me!
+    // Don't duplicate me!
     if ( ! class_exists( 'ReduxFramework' ) ) {
 
         // Redux CDN class
@@ -55,6 +45,8 @@
         // General functions
         require_once dirname( __FILE__ ) . '/inc/class.redux_functions.php';
         require_once dirname( __FILE__ ) . '/inc/class.p.php';
+
+        require_once dirname( __FILE__ ) . '/inc/class.thirdparty.fixes.php';
 
         require_once dirname( __FILE__ ) . '/inc/class.redux_filesystem.php';
 
@@ -77,7 +69,7 @@
             // Please update the build number with each push, no matter how small.
             // This will make for easier support when we ask users what version they are using.
 
-            public static $_version = '3.5.7.9';
+            public static $_version = '3.6.8';
             public static $_dir;
             public static $_url;
             public static $_upload_dir;
@@ -184,6 +176,8 @@
             public $lang = "";
             public $dev_mode_forced = false;
             public $reload_fields = array();
+            public $omit_share_icons = false;
+            public $omit_admin_items = false;
 
             /**
              * Class Constructor. Defines the args for the theme options class
@@ -212,7 +206,6 @@
                 // Pass parent pointer to function helper.
                 Redux_Functions::$_parent     = $this;
                 Redux_CDN::$_parent           = $this;
-                Redux_Admin_Notices::$_parent = $this;
 
                 // Set values
                 $this->set_default_args();
@@ -280,6 +273,21 @@
                         unset ( $this->args['page_type'] );
                     }
 
+                    // Auto create the page_slug appropriately
+                    if ( empty( $this->args['page_slug'] ) ) {
+                        if ( ! empty( $this->args['display_name'] ) ) {
+                            $this->args['page_slug'] = sanitize_html_class( $this->args['display_name'] );
+                        } else if ( ! empty( $this->args['page_title'] ) ) {
+                            $this->args['page_slug'] = sanitize_html_class( $this->args['page_title'] );
+                        } else if ( ! empty( $this->args['menu_title'] ) ) {
+                            $this->args['page_slug'] = sanitize_html_class( $this->args['menu_title'] );
+                        } else {
+                            $this->args['page_slug'] = str_replace( '-', '_', $this->args['opt_name'] );
+                        }
+                    }
+                    
+                    $this->change_demo_defaults();
+                    
                     // Get rid of extra_tabs! Not needed.
                     if ( is_array( $extra_tabs ) && ! empty ( $extra_tabs ) ) {
                         foreach ( $extra_tabs as $tab ) {
@@ -412,13 +420,14 @@
 
                     if ( $this->args['dev_mode'] == true || Redux_Helpers::isLocalHost() == true ) {
                         require_once 'core/dashboard.php';
+                        new reduxDashboardWidget( $this );
 
-                        if ( ! isset ( $GLOBALS['redux_notice_check'] ) ) {
+                        if ( ! isset ( $GLOBALS['redux_notice_check'] ) || $GLOBALS['redux_notice_check'] == 0 ) {
                             require_once 'core/newsflash.php';
 
                             $params = array(
                                 'dir_name'    => 'notice',
-                                'server_file' => 'http://www.reduxframework.com/' . 'wp-content/uploads/redux/redux_notice.json',
+                                'server_file' => 'http://reduxframework.com/wp-content/uploads/redux/redux_notice.json',
                                 'interval'    => 3,
                                 'cookie_id'   => 'redux_blast',
                             );
@@ -438,12 +447,15 @@
                 do_action( 'redux/loaded', $this );
             }
 
-// __construct()
+            // __construct()
 
             private function set_redux_content() {
                 $upload_dir        = wp_upload_dir();
                 self::$_upload_dir = $upload_dir['basedir'] . '/redux/';
-                self::$_upload_url = $upload_dir['baseurl'] . '/redux/';
+                self::$_upload_url = str_replace( array(
+                    'https://',
+                    'http://'
+                ), '//', $upload_dir['baseurl'] . '/redux/' );
             }
 
             private function set_default_args() {
@@ -596,13 +608,13 @@
             public function _update_check() {
                 // Only one notice per instance please
                 if ( ! isset ( $GLOBALS['redux_update_check'] ) ) {
-                    Redux_Functions::updateCheck( self::$_version );
+                    Redux_Functions::updateCheck($this, self::$_version );
                     $GLOBALS['redux_update_check'] = 1;
                 }
             }
 
             public function _admin_notices() {
-                Redux_Admin_Notices::adminNotices( $this->admin_notices );
+                Redux_Admin_Notices::adminNotices($this, $this->admin_notices );
             }
 
             public function _dismiss_admin_notice() {
@@ -623,16 +635,37 @@
                  * @param string     The locale of the blog or from the 'locale' hook
                  * @param string     'redux-framework'  text domain
                  */
-                $locale = apply_filters( "redux/textdomain/{$this->args['opt_name']}", get_locale(), 'redux-framework' );
+                //                $locale = apply_filters( "redux/textdomain/{$this->args['opt_name']}", get_locale(), 'redux-framework' );
+                //
+                //                if ( strpos( $locale, '_' ) === false ) {
+                //                    if ( file_exists( self::$_dir . 'languages/' . strtolower( $locale ) . '_' . strtoupper( $locale ) . '.mo' ) ) {
+                //                        $locale = strtolower( $locale ) . '_' . strtoupper( $locale );
+                //                    }
+                //                }
 
-                if ( strpos( $locale, '_' ) === false ) {
-                    if ( file_exists( self::$_dir . 'languages/' . strtolower( $locale ) . '_' . strtoupper( $locale ) . '.mo' ) ) {
-                        $locale = strtolower( $locale ) . '_' . strtoupper( $locale );
-                    }
+                $basename = basename( __FILE__ );
+                $basepath = plugin_basename( __FILE__ );
+                $basepath = str_replace( $basename, '', $basepath );
+
+                $basepath = apply_filters( "redux/textdomain/basepath/{$this->args['opt_name']}", $basepath );
+
+                $loaded = load_plugin_textdomain( 'redux-framework', false, $basepath . 'languages');
+
+                if ( !$loaded ){
+                    $loaded = load_muplugin_textdomain( 'redux-framework', $basepath . 'languages' );
                 }
-                load_textdomain( 'redux-framework', self::$_dir . 'languages/' . $locale . '.mo' );
+
+                if ( !$loaded ){
+                    $loaded = load_theme_textdomain( 'redux-framework', $basepath . 'languages' );
+                }
+
+                if ( ! $loaded ) {
+                    $locale = apply_filters( 'plugin_locale', get_locale(), 'redux-framework' );
+                    $mofile = dirname( __FILE__ ) . '/languages/redux-framework-' . $locale . '.mo';
+                    load_textdomain( 'redux-framework', $mofile );
+                }
             }
-// _internationalization()
+            // _internationalization()
 
             /**
              * @return ReduxFramework
@@ -642,7 +675,7 @@
                 return self::$instance;
             }
 
-// get_instance()
+            // get_instance()
 
             private function _tracking() {
                 if ( file_exists( dirname( __FILE__ ) . '/inc/tracking.php' ) ) {
@@ -651,7 +684,7 @@
                     $tracking->load( $this );
                 }
             }
-// _tracking()
+            // _tracking()
 
             /**
              * ->_get_default(); This is used to return the default value if default_show is set
@@ -676,7 +709,7 @@
 
                 return $default;
             }
-// _get_default()
+            // _get_default()
 
             /**
              * ->get(); This is used to return and option value from the options array
@@ -692,7 +725,7 @@
             public function get( $opt_name, $default = null ) {
                 return ( ! empty ( $this->options[ $opt_name ] ) ) ? $this->options[ $opt_name ] : $this->_get_default( $opt_name, $default );
             }
-// get()
+            // get()
 
             /**
              * ->set(); This is used to set an arbitrary option in the options array
@@ -711,7 +744,7 @@
                     $this->set_options( $this->options );
                 }
             }
-// set()
+            // set()
 
             /**
              * Set a global variable by the global_variable argument
@@ -746,7 +779,7 @@
 
                 return false;
             }
-// set_global_variable()
+            // set_global_variable()
 
             /**
              * ->set_options(); This is used to set an arbitrary option in the options array
@@ -803,7 +836,7 @@
                     //do_action( "redux/options/{$this->args['opt_name']}/saved", $value, $this->transients['changed_values'] );
                 }
             }
-// set_options()
+            // set_options()
 
             /**
              * ->get_options(); This is used to get options from the database
@@ -850,7 +883,7 @@
                 // Set a global variable by the global_variable argument.
                 $this->set_global_variable();
             }
-// get_options()
+            // get_options()
 
             /**
              * ->get_wordpress_date() - Get Wordpress specific data from the DB and return in a usable array
@@ -859,7 +892,7 @@
              */
             public function get_wordpress_data( $type = false, $args = array() ) {
                 $data = "";
-//return $data;
+                //return $data;
                 /**
                  * filter 'redux/options/{opt_name}/wordpress_data/{type}/'
                  *
@@ -935,7 +968,7 @@
                             $taxonomies = $args['taxonomies'];
                             unset ( $args['taxonomies'] );
                             $terms = get_terms( $taxonomies, $args ); // this will get nothing
-                            if ( ! empty ( $terms ) && !is_a($terms, 'WP_Error') ) {
+                            if ( ! empty ( $terms ) && ! is_a( $terms, 'WP_Error' ) ) {
                                 foreach ( $terms as $term ) {
                                     $data[ $term->term_id ] = $term->name;
                                 }
@@ -1060,6 +1093,15 @@
                                 $args = array( $args );
                             }
                             $data = call_user_func( $args[0] );
+                        } else if ( $type == "users" || $type == "users" ) {
+                            $users = get_users( $args );
+                            if ( ! empty ( $users ) ) {
+                                foreach ( $users as $user ) {
+                                    $data[ $user->ID ] = $user->display_name;
+                                }
+                                //foreach
+                            }
+                            //if
                         }
                         //if
                     }
@@ -1072,7 +1114,7 @@
 
                 return $data;
             }
-// get_wordpress_data()
+            // get_wordpress_data()
 
             /**
              * ->show(); This is used to echo and option value from the options array
@@ -1093,7 +1135,7 @@
                     echo $this->_get_default( $opt_name, $default );
                 }
             }
-// show()
+            // show()
 
             /**
              * Get the default value for an option
@@ -1133,7 +1175,7 @@
                     $this->fields[ $field['type'] ] = array( $field['id'] => 1 );
                 }
                 if ( isset ( $field['default'] ) ) {
-                    $this->options_defaults[ $field['id'] ] = $field['default'];
+                    $this->options_defaults[ $field['id'] ] = apply_filters( "redux/{$this->args['opt_name']}/field/{$field['type']}/defaults", $field['default'], $field );
                 } elseif ( ( $field['type'] != "ace_editor" ) ) {
                     // Sorter data filter
 
@@ -1144,7 +1186,7 @@
                         if ( is_array( $field['data'] ) && ! empty( $field['data'] ) ) {
                             foreach ( $field['data'] as $key => $data ) {
                                 if ( ! empty( $data ) ) {
-                                    if ( ! isset ( $this->field['args'][ $key ] ) ) {
+                                    if ( ! isset ( $field['args'][ $key ] ) ) {
                                         $field['args'][ $key ] = array();
                                     }
                                     $field['options'][ $key ] = $this->get_wordpress_data( $data, $field['args'][ $key ] );
@@ -1255,23 +1297,10 @@
                     }
                     $this->dev_mode_forced  = true;
                     $this->args['dev_mode'] = true;
-                    if ( isset( $this->args['forced_dev_mode_off'] ) && $this->args['forced_dev_mode_off'] == true ) {
-                        $this->dev_mode_forced  = false;
-                        $this->args['dev_mode'] = false;
-                    }
-                }
-
-                // Auto create the page_slug appropriately
-                if ( empty( $this->args['page_slug'] ) ) {
-                    if ( ! empty( $this->args['display_name'] ) ) {
-                        $this->args['page_slug'] = sanitize_html_class( $this->args['display_name'] );
-                    } else if ( ! empty( $this->args['page_title'] ) ) {
-                        $this->args['page_slug'] = sanitize_html_class( $this->args['page_title'] );
-                    } else if ( ! empty( $this->args['menu_title'] ) ) {
-                        $this->args['page_slug'] = sanitize_html_class( $this->args['menu_title'] );
-                    } else {
-                        $this->args['page_slug'] = str_replace( '-', '_', $this->args['opt_name'] );
-                    }
+//                    if ( isset( $this->args['forced_dev_mode_off'] ) && $this->args['forced_dev_mode_off'] == true ) {
+//                        $this->dev_mode_forced  = false;
+//                        $this->args['dev_mode'] = false;
+//                    }
                 }
 
                 if ( isset( $this->args['customizer_only'] ) && $this->args['customizer_only'] == true ) {
@@ -1432,7 +1461,7 @@
                                     continue;
                                 }
 
-                                if ( isset( $section['permissions'] ) && ! current_user_can( $section['permissions'] ) ) {
+                                if ( isset( $section['permissions'] ) && ! self::current_user_can( $section['permissions'] ) ) {
                                     continue;
                                 }
 
@@ -1450,7 +1479,7 @@
 
                 add_action( "load-{$this->page}", array( &$this, '_load_page' ) );
             }
-// _options_page()
+            // _options_page()
 
             /**
              * Add admin bar menu
@@ -1505,6 +1534,10 @@
                     // Let's deal with external links
                     if ( isset ( $this->args['admin_bar_links'] ) ) {
 
+                        if ( ! $this->args['dev_mode'] && $this->omit_admin_items ) {
+                            return;
+                        }
+
                         // Group for Main Root Menu (External Group)
                         $wp_admin_bar->add_node( array(
                             'id'     => $this->args["page_slug"] . '-external',
@@ -1544,7 +1577,7 @@
                     $wp_admin_bar->add_node( $nodeargs );
                 }
             }
-// _admin_bar_menu()
+            // _admin_bar_menu()
 
             /**
              * Output dynamic CSS at bottom of HEAD
@@ -1671,7 +1704,7 @@
                     }
                 }
             }
-// _enqueue_output()
+            // _enqueue_output()
 
             /**
              * Enqueue CSS/JS for options page
@@ -1686,7 +1719,7 @@
                 $enqueue = new reduxCoreEnqueue ( $this );
                 $enqueue->init();
             }
-// _enqueue()
+            // _enqueue()
 
             /**
              * Show page help
@@ -1719,11 +1752,11 @@
                     $hint_status = get_user_meta( $current_user->ID, 'ignore_hints' ) ? get_user_meta( $current_user->ID, 'ignore_hints', true ) : 'true';
 
                     // current page parameters
-                    $curPage = $_GET['page'];
+                    $curPage = esc_attr( $_GET['page'] );
 
                     $curTab = '0';
                     if ( isset ( $_GET['tab'] ) ) {
-                        $curTab = $_GET['tab'];
+                        $curTab = esc_attr( $_GET['tab'] );
                     }
 
                     // Default url values for enabling hints.
@@ -1787,7 +1820,7 @@
                  */
                 do_action( "redux/page/{$this->args['opt_name']}/load", $screen );
             }
-// _load_page()
+            // _load_page()
 
             /**
              * Do action redux-admin-head for options page
@@ -1813,7 +1846,7 @@
                  */
                 do_action( "redux/page/{$this->args['opt_name']}/header", $this );
             }
-// admin_head()
+            // admin_head()
 
             /**
              * Return footer text
@@ -1825,7 +1858,7 @@
             public function admin_footer_text() {
                 return $this->args['footer_credit'];
             }
-// admin_footer_text()
+            // admin_footer_text()
 
             /**
              * Return default output string for use in panel
@@ -1887,7 +1920,7 @@
                 return $default_output;
             }
 
-// get_default_output_string()
+            // get_default_output_string()
 
             public function get_header_html( $field ) {
                 global $current_user;
@@ -1905,9 +1938,11 @@
                         // Set show_hints flag to true, so helptab will be displayed.
                         $this->show_hints = true;
 
+                        $hint = apply_filters( 'redux/hints/html', $hint, $field, $this->args );
+
                         // Get user pref for displaying hints.
                         $metaVal = get_user_meta( $current_user->ID, 'ignore_hints', true );
-                        if ( 'true' == $metaVal || empty ( $metaVal ) ) {
+                        if ( 'true' == $metaVal || empty ( $metaVal ) && empty( $hint ) ) {
 
                             // Set hand cursor for clickable hints
                             $pointer = '';
@@ -2041,14 +2076,14 @@
                     }
 
                     if ( isset ( $section['customizer_only'] ) && $section['customizer_only'] == true ) {
-                        $section['panel'] = false;
+                        $section['panel']     = false;
                         $this->sections[ $k ] = $section;
                     }
 
                     $heading = isset ( $section['heading'] ) ? $section['heading'] : $section['title'];
 
                     if ( isset ( $section['permissions'] ) ) {
-                        if ( ! current_user_can( $section['permissions'] ) ) {
+                        if ( ! self::current_user_can( $section['permissions'] ) ) {
                             $this->hidden_perm_sections[] = $section['title'];
 
                             foreach ( $section['fields'] as $num => $field_data ) {
@@ -2136,7 +2171,7 @@
 
                             if ( isset ( $field['permissions'] ) ) {
 
-                                if ( ! current_user_can( $field['permissions'] ) ) {
+                                if ( ! self::current_user_can( $field['permissions'] ) ) {
                                     $data = isset ( $this->options[ $field['id'] ] ) ? $this->options[ $field['id'] ] : $this->options_defaults[ $field['id'] ];
 
                                     $this->hidden_perm_fields[ $field['id'] ] = $data;
@@ -2383,7 +2418,7 @@
                     $this->set_transients();
                 }
             }
-// _register_settings()
+            // _register_settings()
 
             /**
              * Register Extensions for use
@@ -2440,11 +2475,12 @@
                     $class_file = apply_filters( "redux/extension/{$this->args['opt_name']}/$folder", "$path/$folder/extension_{$folder}.php", $class_file );
 
                     if ( $class_file ) {
+
                         if ( file_exists( $class_file ) ) {
                             require_once $class_file;
-                        }
 
-                        $this->extensions[ $folder ] = new $extension_class ( $this );
+                            $this->extensions[ $folder ] = new $extension_class ( $this );
+                        }
                     }
                 }
 
@@ -2494,7 +2530,7 @@
              * @return array|mixed|string|void
              */
             public function _validate_options( $plugin_options ) {
-//print_r($plugin_options);
+                //print_r($plugin_options);
                 //              exit();
                 if ( isset ( $this->validation_ran ) ) {
                     return $plugin_options;
@@ -2596,10 +2632,6 @@
                      */
                     $plugin_options = apply_filters( "redux/validate/{$this->args['opt_name']}/defaults", $this->options_defaults );
 
-                    // Section reset
-                    //setcookie('redux-compiler-' . $this->args['opt_name'], 1, time() + 3000, '/');
-
-
                     $this->transients['changed_values'] = array();
 
                     if ( empty ( $this->options ) ) {
@@ -2669,11 +2701,11 @@
                     return $plugin_options;
                 }
 
-//                if ($this->transients['last_save_mode'] != 'remove') {
+                //                if ($this->transients['last_save_mode'] != 'remove') {
                 $this->transients['last_save_mode'] = "normal"; // Last save mode
-//               } else {
-//                    $this->transients['last_save_mode'] = '';
-//                }
+                //               } else {
+                //                    $this->transients['last_save_mode'] = '';
+                //                }
 
                 /**
                  * apply_filters 'redux/validate/{opt_name}/before_validation'
@@ -2724,9 +2756,11 @@
                 }
 
                 $this->transients['changed_values'] = array(); // Changed values since last save
-                foreach ( $this->options as $key => $value ) {
-                    if ( isset ( $plugin_options[ $key ] ) && $value != $plugin_options[ $key ] ) {
-                        $this->transients['changed_values'][ $key ] = $value;
+                if ( !empty( $this->options ) ) {
+                    foreach ( $this->options as $key => $value ) {
+                        if ( isset ( $plugin_options[ $key ] ) && $value != $plugin_options[ $key ] ) {
+                            $this->transients['changed_values'][ $key ] = $value;
+                        }
                     }
                 }
 
@@ -2759,19 +2793,19 @@
                         'status' => __( 'Invalid security credential.  Please reload the page and try again.', 'redux-framework' ),
                         'action' => ''
                     ) );
-                    
+
                     die();
                 }
-                
-                if (!current_user_can ( $this->args['page_permissions'] )) {
+
+                if ( ! self::current_user_can( $this->args['page_permissions'] ) ) {
                     echo json_encode( array(
                         'status' => __( 'Invalid user capability.  Please reload the page and try again.', 'redux-framework' ),
                         'action' => ''
                     ) );
-                    
+
                     die();
                 }
-                
+
                 $redux = ReduxFrameworkInstances::get_instance( $_POST['opt_name'] );
 
                 if ( ! empty ( $_POST['data'] ) && ! empty ( $redux->args['opt_name'] ) ) {
@@ -2793,27 +2827,18 @@
                     //    unset($process);
                     //}
                     $_POST['data'] = stripslashes( $_POST['data'] );
-                    parse_str( $_POST['data'], $values );
-                    $values = $values[ $redux->args['opt_name'] ];
 
+                    // Old method of saving, in case we need to go back! - kp
+                    //parse_str( $_POST['data'], $values );
+
+                    // New method to avoid input_var nonesense.  Thanks @harunbasic
+                    $values = $this->redux_parse_str( $_POST['data'] );
+
+                    $values = $values[ $redux->args['opt_name'] ];
 
                     if ( function_exists( 'get_magic_quotes_gpc' ) && get_magic_quotes_gpc() ) {
                         $values = array_map( 'stripslashes_deep', $values );
                     }
-
-                    //$beforeDeep = $values;
-                    //// Ace editor hack for < PHP 5.4. Oy
-                    //if ( isset( $this->fields['ace_editor'] ) ) {
-                    //    if ( function_exists( 'get_magic_quotes_gpc' ) && get_magic_quotes_gpc() ) {
-                    //        foreach ( $this->fields['ace_editor'] as $id => $v ) {
-                    //            if ( version_compare( phpversion(), '5.4', '<' ) ) {
-                    //                $values[ $id ] = stripslashes( $beforeDeep[ $id ] );
-                    //            } else {
-                    //                $values[ $id ] = $beforeDeep[ $id ];
-                    //            }
-                    //        }
-                    //    }
-                    //}
 
                     if ( ! empty ( $values ) ) {
 
@@ -2824,17 +2849,17 @@
                             $redux->set_options( $redux->_validate_options( $values ) );
 
                             $do_reload = false;
-                            if (isset($this->reload_fields) && !empty($this->reload_fields)) {
-                                if (!empty($this->transients['changed_values'])) {
-                                    foreach ($this->reload_fields as $idx => $val) {
-                                        if (  array_key_exists ( $val, $this->transients['changed_values'] )) {
+                            if ( isset( $this->reload_fields ) && ! empty( $this->reload_fields ) ) {
+                                if ( ! empty( $this->transients['changed_values'] ) ) {
+                                    foreach ( $this->reload_fields as $idx => $val ) {
+                                        if ( array_key_exists( $val, $this->transients['changed_values'] ) ) {
                                             $do_reload = true;
                                         }
                                     }
                                 }
                             }
-                            
-                            if ( $do_reload || ( isset ( $values['defaults'] ) && ! empty ( $values['defaults'] ) ) || ( isset ( $values['defaults-section'] ) && ! empty ( $values['defaults-section'] ) )) {
+
+                            if ( $do_reload || ( isset ( $values['defaults'] ) && ! empty ( $values['defaults'] ) ) || ( isset ( $values['defaults-section'] ) && ! empty ( $values['defaults-section'] ) ) ) {
                                 echo json_encode( array( 'status' => 'success', 'action' => 'reload' ) );
                                 die ();
                             }
@@ -2940,6 +2965,17 @@
                                 }
                             }
 
+//                            if ( isset ( $field['type'] ) && $field['type'] == 'typography' ) {
+//                                if ( ! is_array( $plugin_options[ $field['id'] ] ) && ! empty( $plugin_options[ $field['id'] ] ) ) {
+//                                    $plugin_options[ $field['id'] ] = json_decode( $plugin_options[ $field['id'] ], true );
+//                                }
+//                            }
+
+                            if ( isset( $this->extensions[ $field['type'] ] ) && method_exists( $this->extensions[ $field['type'] ], '_validate_values' ) ) {
+                                $plugin_options = $this->extensions[ $field['type'] ]->_validate_values( $plugin_options, $field, $sections );
+
+                            }
+
                             // Default 'not_empty 'flag to false.
                             $isNotEmpty = false;
 
@@ -2964,7 +3000,10 @@
                                 if ( ! $isNotEmpty ) {
 
                                     // Empty id and not checking for 'not_empty.  Bail out...
-                                    continue;
+                                    if (!isset($field['validate_callback'])) {
+                                        continue;
+                                    }
+                                    //continue;
                                 }
                             }
 
@@ -3044,10 +3083,14 @@
                                             }
                                         }
                                     } else {
-                                        if ( is_array( $plugin_options[ $field['id'] ] ) ) {
-                                            $pofi = $plugin_options[ $field['id'] ];
+                                        if ( isset( $plugin_options[ $field['id'] ] ) ) {
+                                            if ( is_array( $plugin_options[ $field['id'] ] ) ) {
+                                                $pofi = $plugin_options[ $field['id'] ];
+                                            } else {
+                                                $pofi = trim( $plugin_options[ $field['id'] ] );
+                                            }
                                         } else {
-                                            $pofi = trim( $plugin_options[ $field['id'] ] );
+                                            $pofi = null;
                                         }
 
                                         $validation                     = new $validate ( $this, $field, $pofi, $options[ $field['id'] ] );
@@ -3069,13 +3112,16 @@
                                 $callback = $field['validate_callback'];
                                 unset ( $field['validate_callback'] );
 
-                                $callbackvalues                 = call_user_func( $callback, $field, $plugin_options[ $field['id'] ], $options[ $field['id'] ] );
+                                $plugin_option                  = isset( $plugin_options[ $field['id'] ] ) ? $plugin_options[ $field['id'] ] : null;
+                                $option                         = isset( $options[ $field['id'] ] )        ? $options[ $field['id'] ]        : null;
+                                $callbackvalues                 = call_user_func( $callback, $field, $plugin_option, $option );
                                 $plugin_options[ $field['id'] ] = $callbackvalues['value'];
 
                                 if ( isset ( $callbackvalues['error'] ) ) {
                                     $this->errors[] = $callbackvalues['error'];
                                 }
                                 // TODO - This warning message is failing. Hmm.
+                                // No it isn't.  Problem was in the sample-config - kp
                                 if ( isset ( $callbackvalues['warning'] ) ) {
                                     $this->warnings[] = $callbackvalues['warning'];
                                 }
@@ -3114,9 +3160,9 @@
                 }
 
                 $string = "";
-                if ( ( ( isset ( $this->args['icon_type'] ) && $this->args['icon_type'] == 'image' ) || ( isset ( $section['icon_type'] ) && $section['icon_type'] == 'image' ) ) || ( isset($section['icon'])  && strpos( $section['icon'], '/' ) !== false ) ) {
+                if ( ( ( isset ( $this->args['icon_type'] ) && $this->args['icon_type'] == 'image' ) || ( isset ( $section['icon_type'] ) && $section['icon_type'] == 'image' ) ) || ( isset( $section['icon'] ) && strpos( $section['icon'], '/' ) !== false ) ) {
                     //if( !empty( $this->args['icon_type'] ) && $this->args['icon_type'] == 'image' ) {
-                    $icon = ( ! isset ( $section['icon'] ) ) ? '' : '<img class="image_icon_type" src="' . esc_url($section['icon']) . '" /> ';
+                    $icon = ( ! isset ( $section['icon'] ) ) ? '' : '<img class="image_icon_type" src="' . esc_url( $section['icon'] ) . '" /> ';
                 } else {
                     if ( ! empty ( $section['icon_class'] ) ) {
                         $icon_class = ' ' . $section['icon_class'];
@@ -3125,7 +3171,7 @@
                     } else {
                         $icon_class = '';
                     }
-                    $icon = ( ! isset ( $section['icon'] ) ) ? '<i class="el el-cog' . esc_attr($icon_class) . '"></i> ' : '<i class="' . esc_attr($section['icon']) . esc_attr($icon_class) . '"></i> ';
+                    $icon = ( ! isset ( $section['icon'] ) ) ? '<i class="el el-cog' . esc_attr( $icon_class ) . '"></i> ' : '<i class="' . esc_attr( $section['icon'] ) . esc_attr( $icon_class ) . '"></i> ';
                 }
                 if ( strpos( $icon, 'el-icon-' ) !== false ) {
                     $icon = str_replace( 'el-icon-', 'el el-', $icon );
@@ -3143,7 +3189,7 @@
                 }
 
                 if ( isset ( $section['type'] ) && $section['type'] == "divide" ) {
-                    $string .= '<li class="divide' . esc_attr($section['class']) . '">&nbsp;</li>';
+                    $string .= '<li class="divide' . esc_attr( $section['class'] ) . '">&nbsp;</li>';
                 } else if ( ! isset ( $section['subsection'] ) || $section['subsection'] != true ) {
 
                     // DOVY! REPLACE $k with $section['ID'] when used properly.
@@ -3152,14 +3198,15 @@
                     $subsectionsClass = $subsections ? ' hasSubSections' : '';
                     $subsectionsClass .= ( ! isset ( $section['fields'] ) || empty ( $section['fields'] ) ) ? ' empty_section' : '';
                     $extra_icon = $subsections ? '<span class="extraIconSubsections"><i class="el el-chevron-down">&nbsp;</i></span>' : '';
-                    $string .= '<li id="' . esc_attr($k . $suffix) . '_section_group_li" class="redux-group-tab-link-li' . esc_attr($hide_section) . esc_attr($section['class']) . esc_attr($subsectionsClass) . '">';
-                    $string .= '<a href="javascript:void(0);" id="' . esc_attr($k . $suffix) . '_section_group_li_a" class="redux-group-tab-link-a" data-key="' . esc_attr($k) . '" data-rel="' . esc_attr($k . $suffix) . '">' . $extra_icon . $icon . '<span class="group_title">' . wp_kses_post($section['title']) . '</span></a>';
+                    //var_dump($section);
+                    $string .= '<li id="' . esc_attr( $k . $suffix ) . '_section_group_li" class="redux-group-tab-link-li' . esc_attr( $hide_section ) . esc_attr( $section['class'] ) . esc_attr( $subsectionsClass ) . '">';
+                    $string .= '<a href="javascript:void(0);" id="' . esc_attr( $k . $suffix ) . '_section_group_li_a" class="redux-group-tab-link-a" data-key="' . esc_attr( $k ) . '" data-rel="' . esc_attr( $k . $suffix ) . '">' . $extra_icon . $icon . '<span class="group_title">' . wp_kses_post( $section['title'] ) . '</span></a>';
 
                     $nextK = $k;
 
                     // Make sure you can make this a subsection
                     if ( $subsections ) {
-                        $string .= '<ul id="' . esc_attr($nextK . $suffix) . '_section_group_li_subsections" class="subsection">';
+                        $string .= '<ul id="' . esc_attr( $nextK . $suffix ) . '_section_group_li_subsections" class="subsection">';
                         $doLoop = true;
 
                         while ( $doLoop ) {
@@ -3186,7 +3233,7 @@
 
                                 if ( ( isset ( $this->args['icon_type'] ) && $this->args['icon_type'] == 'image' ) || ( isset ( $sections[ $nextK ]['icon_type'] ) && $sections[ $nextK ]['icon_type'] == 'image' ) ) {
                                     //if( !empty( $this->args['icon_type'] ) && $this->args['icon_type'] == 'image' ) {
-                                    $icon = ( ! isset ( $sections[ $nextK ]['icon'] ) ) ? '' : '<img class="image_icon_type" src="' . esc_url($sections[ $nextK ]['icon']) . '" /> ';
+                                    $icon = ( ! isset ( $sections[ $nextK ]['icon'] ) ) ? '' : '<img class="image_icon_type" src="' . esc_url( $sections[ $nextK ]['icon'] ) . '" /> ';
                                 } else {
                                     if ( ! empty ( $sections[ $nextK ]['icon_class'] ) ) {
                                         $icon_class = ' ' . $sections[ $nextK ]['icon_class'];
@@ -3195,15 +3242,16 @@
                                     } else {
                                         $icon_class = '';
                                     }
-                                    $icon = ( ! isset ( $sections[ $nextK ]['icon'] ) ) ? '' : '<i class="' . esc_attr($sections[ $nextK ]['icon']) . esc_attr($icon_class) . '"></i> ';
+                                    $icon = ( ! isset ( $sections[ $nextK ]['icon'] ) ) ? '' : '<i class="' . esc_attr( $sections[ $nextK ]['icon'] ) . esc_attr( $icon_class ) . '"></i> ';
                                 }
                                 if ( strpos( $icon, 'el-icon-' ) !== false ) {
                                     $icon = str_replace( 'el-icon-', 'el el-', $icon );
                                 }
 
-                                $section[ $nextK ]['class'] = isset ( $section[ $nextK ]['class'] ) ? $section[ $nextK ]['class'] : '';
-                                $string .= '<li id="' . esc_attr($nextK . $suffix) . '_section_group_li" class="redux-group-tab-link-li ' . esc_attr($hide_sub) . esc_attr($section[ $nextK ]['class']) . ( $icon ? ' hasIcon' : '' ) . '">';
-                                $string .= '<a href="javascript:void(0);" id="' . esc_attr($nextK . $suffix) . '_section_group_li_a" class="redux-group-tab-link-a" data-key="' . esc_attr($nextK) . '" data-rel="' . esc_attr($nextK . $suffix) . '">' . $icon . '<span class="group_title">' . wp_kses_post($sections[ $nextK ]['title']) . '</span></a>';
+                                $sections[ $nextK ]['class'] = isset($sections[ $nextK ]['class']) ? $sections[ $nextK ]['class'] : '';
+                                $section[ $nextK ]['class'] = isset ( $section[ $nextK ]['class'] ) ? $section[ $nextK ]['class'] : $sections[ $nextK ]['class'];
+                                $string .= '<li id="' . esc_attr( $nextK . $suffix ) . '_section_group_li" class="redux-group-tab-link-li ' . esc_attr( $hide_sub ) . esc_attr( $section[ $nextK ]['class'] ) . ( $icon ? ' hasIcon' : '' ) . '">';
+                                $string .= '<a href="javascript:void(0);" id="' . esc_attr( $nextK . $suffix ) . '_section_group_li_a" class="redux-group-tab-link-a" data-key="' . esc_attr( $nextK ) . '" data-rel="' . esc_attr( $nextK . $suffix ) . '">' . $icon . '<span class="group_title">' . wp_kses_post( $sections[ $nextK ]['title'] ) . '</span></a>';
                                 $string .= '</li>';
                             }
                         }
@@ -3216,7 +3264,7 @@
 
                 return $string;
             }
-// section_menu()
+            // section_menu()
 
             /**
              * HTML OUTPUT.
@@ -3243,7 +3291,8 @@
              * @return      void
              */
             public function _section_desc( $section ) {
-                $id = trim( rtrim( $section['id'], '_section' ), $this->args['opt_name'] );
+                $id = rtrim( $section['id'], '_section' );
+                $id = str_replace($this->args['opt_name'], '', $id);
 
                 if ( isset ( $this->sections[ $id ]['desc'] ) && ! empty ( $this->sections[ $id ]['desc'] ) ) {
                     echo '<div class="redux-section-desc">' . $this->sections[ $id ]['desc'] . '</div>';
@@ -3355,7 +3404,7 @@
                     $field_class = "ReduxFramework_{$field['type']}";
 
                     if ( ! class_exists( $field_class ) ) {
-//                    $class_file = apply_filters( 'redux/field/class/'.$field['type'], self::$_dir . 'inc/fields/' . $field['type'] . '/field_' . $field['type'] . '.php', $field ); // REMOVE
+                        //                    $class_file = apply_filters( 'redux/field/class/'.$field['type'], self::$_dir . 'inc/fields/' . $field['type'] . '/field_' . $field['type'] . '.php', $field ); // REMOVE
                         /**
                          * filter 'redux/{opt_name}/field/class/{field.type}'
                          *
@@ -3374,7 +3423,7 @@
                     if ( class_exists( $field_class ) ) {
                         $value = isset ( $this->options[ $field['id'] ] ) ? $this->options[ $field['id'] ] : '';
 
-                        if ( $v !== null ) {
+                        if ( $v != null ) {
                             $value = $v;
                         }
 
@@ -3548,7 +3597,7 @@
                     }
                 }
             }
-// _field_input()
+            // _field_input()
 
             /**
              * Can Output CSS
@@ -3591,7 +3640,7 @@
 
                 return $return;
             }
-// _can_output_css
+            // _can_output_css
 
             /**
              * Checks dependencies between objects based on the $field['required'] array
@@ -3669,25 +3718,26 @@
                             foreach ( $parentValue as $idx => $val ) {
                                 if ( is_array( $checkValue ) ) {
                                     foreach ( $checkValue as $i => $v ) {
-                                        if ( $val == $v ) {
+                                        if ( Redux_Helpers::makeBoolStr($val) === Redux_Helpers::makeBoolStr($v) ) {
                                             $return = true;
                                         }
                                     }
                                 } else {
-                                    if ( $val == $checkValue ) {
+                                    if ( Redux_Helpers::makeBoolStr($val) === Redux_Helpers::makeBoolStr($checkValue) ) {
                                         $return = true;
                                     }
                                 }
                             }
                         } else {
+                            //var_dump($checkValue);
                             if ( is_array( $checkValue ) ) {
                                 foreach ( $checkValue as $i => $v ) {
-                                    if ( $parentValue == $v ) {
+                                    if ( Redux_Helpers::makeBoolStr($parentValue) === Redux_Helpers::makeBoolStr($v) ) {
                                         $return = true;
                                     }
                                 }
                             } else {
-                                if ( $parentValue == $checkValue ) {
+                                if ( Redux_Helpers::makeBoolStr($parentValue) === Redux_Helpers::makeBoolStr($checkValue) ) {
                                     $return = true;
                                 }
                             }
@@ -3701,12 +3751,12 @@
                             foreach ( $parentValue as $idx => $val ) {
                                 if ( is_array( $checkValue ) ) {
                                     foreach ( $checkValue as $i => $v ) {
-                                        if ( $val != $v ) {
+                                        if ( Redux_Helpers::makeBoolStr($val) !== Redux_Helpers::makeBoolStr($v) ) {
                                             $return = true;
                                         }
                                     }
                                 } else {
-                                    if ( $val != $checkValue ) {
+                                    if ( Redux_Helpers::makeBoolStr($val) !== Redux_Helpers::makeBoolStr($checkValue) ) {
                                         $return = true;
                                     }
                                 }
@@ -3714,30 +3764,30 @@
                         } else {
                             if ( is_array( $checkValue ) ) {
                                 foreach ( $checkValue as $i => $v ) {
-                                    if ( $parentValue != $v ) {
+                                    if ( Redux_Helpers::makeBoolStr($parentValue) !== Redux_Helpers::makeBoolStr($v) ) {
                                         $return = true;
                                     }
                                 }
                             } else {
-                                if ( $parentValue != $checkValue ) {
+                                if ( Redux_Helpers::makeBoolStr($parentValue) !== Redux_Helpers::makeBoolStr($checkValue) ) {
                                     $return = true;
                                 }
                             }
                         }
 
-//                        if ( is_array( $checkValue ) ) {
-//                            if ( ! in_array( $parentValue, $checkValue ) ) {
-//                                $return = true;
-//                            }
-//                        } else {
-//                            if ( $parentValue != $checkValue ) {
-//                                $return = true;
-//                            } else if ( is_array( $parentValue ) ) {
-//                                if ( ! in_array( $checkValue, $parentValue ) ) {
-//                                    $return = true;
-//                                }
-//                            }
-//                        }
+                        //                        if ( is_array( $checkValue ) ) {
+                        //                            if ( ! in_array( $parentValue, $checkValue ) ) {
+                        //                                $return = true;
+                        //                            }
+                        //                        } else {
+                        //                            if ( $parentValue != $checkValue ) {
+                        //                                $return = true;
+                        //                            } else if ( is_array( $parentValue ) ) {
+                        //                                if ( ! in_array( $checkValue, $parentValue ) ) {
+                        //                                    $return = true;
+                        //                                }
+                        //                            }
+                        //                        }
                         break;
                     case '>':
                     case 'greater':
@@ -3876,6 +3926,333 @@
 
                 return $data_string;
             }
+
+            /**
+             * Parses the string into variables without the max_input_vars limitation.
+             *
+             * @since   3.5.7.11
+             * @author  harunbasic
+             * @access  public
+             *
+             * @param   string $string
+             *
+             * @return  array $result
+             */
+            function redux_parse_str( $string ) {
+                if ( '' == $string ) {
+                    return false;
+                }
+
+                $result = array();
+                $pairs  = explode( '&', $string );
+
+                foreach ( $pairs as $key => $pair ) {
+                    // use the original parse_str() on each element
+                    parse_str( $pair, $params );
+
+                    $k = key( $params );
+
+                    if ( ! isset( $result[ $k ] ) ) {
+                        $result += $params;
+                    } else {
+                        $result[ $k ] = $this->redux_array_merge_recursive_distinct( $result[ $k ], $params[ $k ] );
+                    }
+                }
+
+                return $result;
+            }
+
+
+            /**
+             * Merge arrays without converting values with duplicate keys to arrays as array_merge_recursive does.
+             * As seen here http://php.net/manual/en/function.array-merge-recursive.php#92195
+             *
+             * @since   3.5.7.11
+             * @author  harunbasic
+             * @access  public
+             *
+             * @param   array $array1
+             * @param   array $array2
+             *
+             * @return  array $merged
+             */
+            function redux_array_merge_recursive_distinct( array $array1, array $array2 ) {
+                $merged = array();
+                
+                $merged = $array1;
+
+                foreach ( $array2 as $key => $value ) {
+                    if ( is_array( $value ) && isset( $merged[ $key ] ) && is_array( $merged[ $key ] ) ) {
+                        $merged[ $key ] = $this->redux_array_merge_recursive_distinct( $merged[ $key ], $value );
+                    } else if ( is_numeric( $key ) && isset( $merged[ $key ] ) ) {
+                        $merged[] = $value;
+                    } else {
+                        $merged[ $key ] = $value;
+                    }
+                }
+
+                return $merged;
+            }
+
+            private function change_demo_defaults() {
+                if ( $this->args['dev_mode'] == true || Redux_Helpers::isLocalHost() == true ) {
+                    if ( ! empty( $this->args['admin_bar_links'] ) ) {
+                        foreach ( $this->args['admin_bar_links'] as $idx => $arr ) {
+                            if ( is_array( $arr ) && ! empty( $arr ) ) {
+                                foreach ( $arr as $x => $y ) {
+                                    if ( strpos( strtolower( $y ), 'redux' ) !== false ) {
+                                        $msg = __( '<strong>Redux Framework Notice: </strong>There are references to the Redux Framework support site in your config\'s <code>admin_bar_links</code> argument.  This is sample data.  Please change or remove this data before shipping your product.', 'redux-framework' );
+                                        $this->display_arg_change_notice( 'admin', $msg );
+                                        $this->omit_admin_items = true;
+                                        continue;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if ( ! empty( $this->args['share_icons'] ) ) {
+                        foreach ( $this->args['share_icons'] as $idx => $arr ) {
+                            if ( is_array( $arr ) && ! empty( $arr ) ) {
+                                foreach ( $arr as $x => $y ) {
+                                    if (!$this->omit_share_icons) {
+                                        if ( strpos( strtolower( $y ), 'redux' ) !== false ) {
+                                            $msg = __( '<strong>Redux Framework Notice: </strong>There are references to the Redux Framework support site in your config\'s <code>share_icons</code> argument.  This is sample data.  Please change or remove this data before shipping your product.', 'redux-framework' );
+                                            $this->display_arg_change_notice( 'share', $msg );
+                                            $this->omit_share_icons = true;
+                                            continue;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            private function display_arg_change_notice( $mode, $msg = '' ) {
+                if ( $mode == 'admin' ) {
+                    if ( ! $this->omit_admin_items ) {
+                        $data = array(
+                            'parent'    => $this,
+                            'type'      => 'error',
+                            'msg'       => $msg,
+                            'id'        => 'admin_config',
+                            'dismiss'   => true
+                        );
+                        
+                        Redux_Admin_Notices::set_notice($data);
+                    }
+                }
+
+                if ( $mode == 'share' ) {
+                    if ( ! $this->omit_share_icons ) {
+                        $data = array(
+                            'parent'    => $this,
+                            'type'      => 'error',
+                            'msg'       => $msg,
+                            'id'        => 'share_config',
+                            'dismiss'   => true
+                        );
+                        
+                        Redux_Admin_Notices::set_notice($data);
+                    }
+                }
+            }
+
+
+            /**
+             * Checks a nested capabilities array or string to determine if the current user meets the requirements.
+             *
+             * @since 3.6.3.4
+             *
+             * @param  string|array $capabilities Permission string or array to check. See self::user_can() for details.
+             * @param  int          $object_id    (Optional) ID of the specific object to check against if capability is a "meta" cap.
+             *                                    e.g. 'edit_post', 'edit_user', 'edit_page', etc.,
+             *
+             * @return bool Whether or not the user meets the requirements. False on invalid user.
+             */
+            public static function current_user_can( $capabilities ) {
+                $current_user = wp_get_current_user();
+
+                if ( empty( $current_user ) ) {
+                    return false;
+                }
+
+                $name_arr=func_get_args();
+                $args = array_merge( array( $current_user ),$name_arr );
+
+                return call_user_func_array( array( 'self', 'user_can' ), $args );
+            }
+
+
+            /**
+             * Checks a nested capabilities array or string to determine if the user meets the requirements.
+             *
+             * You can pass in a simple string like 'edit_posts' or an array of conditions.
+             *
+             * The capability 'relation' is reserved for controlling the relation mode (AND/OR), which defaults to AND.
+             *
+             * Max depth of 30 levels.  False is returned for any conditions exceeding max depth.
+             *
+             * If you want to check meta caps, you must also pass the object ID on which to check against.
+             * If you get the error: PHP Notice:  Undefined offset: 0 in /wp-includes/capabilities.php, you didn't
+             * pass the required $object_id.
+             *
+             * @since 3.6.3.4
+             *
+             * @example
+             * ::user_can( 42, 'edit_pages' );                        // Checks if user ID 42 has the 'edit_pages' cap.
+             * ::user_can( 42, 'edit_page', 17433 );                  // Checks if user ID 42 has the 'edit_page' cap for post ID 17433.
+             * ::user_can( 42, array( 'edit_pages', 'edit_posts' ) ); // Checks if user ID 42 has both the 'edit_pages' and 'edit_posts' caps.
+             *
+             * @param  int|object   $user         User ID or WP_User object to check. Defaults to the current user.
+             * @param  string|array $capabilities Capability string or array to check. The array lets you use multiple
+             *                                    conditions to determine if a user has permission.
+             *                                    Invalid conditions are skipped (conditions which aren't a string/array/bool/number(cast to bool)).
+             *   Example array where the user needs to have either the 'edit_posts' capability OR doesn't have the
+             *   'delete_pages' cap OR has the 'update_plugins' AND 'add_users' capabilities.
+             *   array(
+             *     'relation'     => 'OR',      // Optional, defaults to AND.
+             *     'edit_posts',                // Equivalent to 'edit_posts' => true,
+             *     'delete_pages' => false,     // Tests that the user DOESN'T have this capability
+             *     array(                       // Nested conditions array (up to 30 nestings)
+             *       'update_plugins',
+             *       'add_users',
+             *     ),
+             *   )
+             *
+             * @param  int          $object_id    (Optional) ID of the specific object to check against if capability is a "meta" cap.
+             *                                    e.g. 'edit_post', 'edit_user', 'edit_page', etc.,
+             *
+             * @return bool Whether or not the user meets the requirements.
+             *              Will always return false for:
+             *              - Invalid/missing user
+             *              - If the $capabilities is not a string or array
+             *              - Max nesting depth exceeded (for that level)
+             */
+            public static function user_can( $user, $capabilities, $object_id = null ) {
+                static $depth = 0;
+                $args = array();
+                
+                if ( $depth >= 30 ) {
+                    return false;
+                }
+
+                if ( empty( $user ) ) {
+                    return false;
+                }
+
+                if ( !is_object( $user ) ) {
+                    $user = get_userdata( $user );
+                }
+
+                if ( is_string( $capabilities ) ) {
+                    // Simple string capability check
+                    $args = array(
+                        $user,
+                        $capabilities,
+                    );
+
+                    if ( $object_id !== null ) {
+                        $args[] = $object_id;
+                    }
+
+                    return call_user_func_array( 'user_can', $args );
+                } else {
+                    // Only strings and arrays are allowed as valid capabilities
+                    if ( !is_array( $capabilities ) ) {
+                        return false;
+                    }
+                }
+
+                // Capability array check
+                $or = false;
+
+                foreach ( $capabilities as $key => $value ) {
+                    if ( $key === 'relation' ) {
+                        if ( $value === 'OR' ) {
+                            $or = true;
+                        }
+
+                        continue;
+                    }
+
+                    /**
+                     * Rules can be in 4 different formats:
+                     * [
+                     *   [0]      => 'foobar',
+                     *   [1]      => array(...),
+                     *   'foobar' => false,
+                     *   'foobar' => array(...),
+                     * ]
+                     */
+                    if ( is_numeric( $key ) ) {
+                        // Numeric key
+                        if ( is_string( $value ) ) {
+                            // Numeric key with a string value is the capability string to check
+                            // [0] => 'foobar'
+                            $args = array( $user, $value, );
+
+                            if ( $object_id !== null ) {
+                                $args[] = $object_id;
+                            }
+
+                            $expression_result = call_user_func_array( 'user_can', $args ) === true;
+                        } elseif ( is_array( $value ) ) {
+                            // [0] => array(...)
+                            $depth++;
+
+                            $expression_result = self::user_can( $user, $value, $object_id );
+
+                            $depth--;
+                        } else {
+                            // Invalid types are skipped
+                            continue;
+                        }
+                    } else {
+                        // Non-numeric key
+                        if ( is_scalar( $value ) ) {
+                            // 'foobar' => false
+                            $args = array( $user, $key, );
+
+                            if ( $object_id !== null ) {
+                                $args[] = $object_id;
+                            }
+
+                            $expression_result = call_user_func_array( 'user_can', $args ) === (bool)$value;
+                        } elseif ( is_array( $value ) ) {
+                            // 'foobar' => array(...)
+                            $depth++;
+
+                            $expression_result = self::user_can( $user, $value, $object_id );
+
+                            $depth--;
+                        } else {
+                            // Invalid types are skipped
+                            continue;
+                        }
+                    }
+
+                    // Check after every evaluation if we know enough to return a definitive answer
+                    if ( $or ) {
+                        if ( $expression_result ) {
+                            // If the relation is OR, return on the first true expression
+                            return true;
+                        }
+                    } else {
+                        if ( !$expression_result ) {
+                            // If the relation is AND, return on the first false expression
+                            return false;
+                        }
+                    }
+                }
+
+                // If we get this far on an OR, then it failed
+                // If we get this far on an AND, then it succeeded
+                return !$or;
+            }
+
         }
 
         // ReduxFramework

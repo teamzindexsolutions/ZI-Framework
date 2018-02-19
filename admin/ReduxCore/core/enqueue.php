@@ -32,8 +32,10 @@
 
                 $this->enqueue_fields();
 
-                $this->set_localized_data();
+                add_filter("redux/{$this->parent->args['opt_name']}/localize", array('Redux_Helpers', 'localize'));
 
+                $this->set_localized_data();
+                
                 /**
                  * action 'redux-enqueue-{opt_name}'
                  *
@@ -89,10 +91,10 @@
                 //*****************************************************************
                 // Spectrum CSS
                 //*****************************************************************
-                $css_file = 'redux-spectrum.min.css';
-                if ($this->parent->args['dev_mode']) {
+                //$css_file = 'redux-spectrum.min.css';
+                //if ($this->parent->args['dev_mode']) {
                     $css_file = 'redux-spectrum.css';
-                }                
+                //}
                 
                 wp_register_style(
                     'redux-spectrum-css',
@@ -199,7 +201,7 @@
                 wp_register_script(
                     'redux-select2-sortable-js',
                     ReduxFramework::$_url . 'assets/js/vendor/redux.select2.sortable' . $this->min . '.js',
-                    array( 'jquery' ),
+                    array( 'jquery', 'jquery-ui-sortable' ),
                     $this->timestamp,
                     true
                 );
@@ -261,17 +263,16 @@
                 //*****************************************************************
                 // Vendor JS
                 //*****************************************************************
-                if ( $this->parent->args['dev_mode'] ) {
-                    wp_register_script(
-                        'redux-vendor',
-                        ReduxFramework::$_url . 'assets/js/vendor.min.js',
-                        array( 'jquery' ),
-                        $this->timestamp,
-                        true
-                    );
+                wp_register_script(
+                    'redux-vendor',
+                    ReduxFramework::$_url . 'assets/js/vendor.min.js',
+                    array( 'jquery' ),
+                    $this->timestamp,
+                    true
+                );
 
-                    array_push( $depArray, 'redux-vendor' );
-                }
+                array_push( $depArray, 'redux-vendor' );
+
 
                 //*****************************************************************
                 // Redux JS
@@ -320,6 +321,7 @@
                             if ( ! isset( $this->parent->options[ $field['id'] ] ) ) {
                                 $this->parent->options[ $field['id'] ] = "";
                             }
+
                             $theField = new $field_class( $field, $this->parent->options[ $field['id'] ], $this->parent );
 
                             // Move dev_mode check to a new if/then block
@@ -401,6 +403,10 @@
             }
 
             private function set_localized_data() {
+                if (!empty($this->parent->args['last_tab'])) {
+                    $this->parent->localize_data['last_tab']       = $this->parent->args['last_tab'];
+                }
+
                 $this->parent->localize_data['required']       = $this->parent->required;
                 $this->parent->localize_data['fonts']          = $this->parent->fonts;
                 $this->parent->localize_data['required_child'] = $this->parent->required_child;
@@ -432,11 +438,6 @@
                     }
                 }
 
-                if ( isset( $this->parent->args['dev_mode'] ) && $this->parent->args['dev_mode'] == true || $this->parent->args['dev_mode'] == false && isset($this->parent->args['forced_dev_mode_off']) && $this->parent->args['forced_dev_mode_off'] == true ) {
-                    $nonce                               = wp_create_nonce( 'redux-ads-nonce' );
-                    $base                                = admin_url( 'admin-ajax.php' ) . '?action=redux_p&nonce=' . $nonce . '&url=';
-                    $this->parent->localize_data['rAds'] = Redux_Helpers::rURL_fix( $base, $this->parent->args['opt_name'] );
-                }
 
                 $this->parent->localize_data['fieldsHidden'] = $this->parent->fieldsHidden;
                 $this->parent->localize_data['options']      = $this->parent->options;
@@ -494,6 +495,7 @@
                     'alert'   => __( 'There was a problem with your action. Please try again or reload the page.', 'redux-framework' ),
                 );
 
+                $this->parent->localize_data = apply_filters( "redux/{$this->parent->args['opt_name']}/localize", $this->parent->localize_data );
 
                 $this->get_warnings_and_errors_array();
 
